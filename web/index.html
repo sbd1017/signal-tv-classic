@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TV</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0d10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TV">
+<link rel="manifest" href="/tv/pwa/manifest.webmanifest">
+<link rel="icon" href="/tv/pwa/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/tv/pwa/apple-touch-icon.png">
+<link rel="stylesheet" href="/tv/static/app.css?v=20261013233000">
+<script type="module" src="/tv/static/js/app.js?v=20261013233000"></script>
+</head>
+<body>
+<div class="app" id="app">
+  <nav class="rail" aria-label="Sections">
+    <a class="brand" href="#/live" aria-label="TV home"><span class="brand-mark" aria-hidden="true"></span><span>TV</span></a>
+    <ul class="rail-links">
+      <li><a href="#/live" data-nav="live"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#live"></use></svg><span>Live TV</span></a></li>
+      <li><a href="#/sports" data-nav="sports"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#ball"></use></svg><span>Sports</span></a></li>
+      <li><a href="#/movies" data-nav="movies"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#film"></use></svg><span>Movies</span></a></li>
+      <li><a href="#/series" data-nav="series"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#series"></use></svg><span>Series</span></a></li>
+      <li><a href="#/search" data-nav="search"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#search"></use></svg><span>Search</span></a></li>
+      <li class="rail-sep" aria-hidden="true"></li>
+      <li><a href="#/continue" data-nav="continue"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#resume"></use></svg><span>Continue Watching</span></a></li>
+      <li><a href="#/favourites" data-nav="favourites"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#star"></use></svg><span>Favourites</span></a></li>
+      <li><a href="#/recent" data-nav="recent"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#clock"></use></svg><span>Recent</span></a></li>
+    </ul>
+    <div class="rail-foot" id="rail-status" aria-live="polite"></div>
+  </nav>
+
+  <main class="main" id="main">
+    <section class="player" id="player" aria-label="Player" hidden>
+      <div class="stage" id="stage">
+        <video id="video" playsinline webkit-playsinline preload="none" x-webkit-airplay="allow"></video>
+        <div class="p-idle" id="p-idle" hidden>
+          <img class="p-idle-logo" id="p-idle-logo" alt="">
+          <div class="p-idle-text"><span class="eyebrow">Last watched</span><strong id="p-idle-name"></strong></div>
+          <button class="btn primary" id="p-idle-play" type="button"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#play"></use></svg>Resume</button>
+        </div>
+        <div class="p-spinner" id="p-spinner" hidden><span class="spin" aria-hidden="true"></span><span id="p-spinner-text">Tuning…</span></div>
+        <div class="p-error" id="p-error" role="alert" hidden>
+          <p id="p-error-text">Something went wrong.</p>
+          <div class="p-error-actions">
+            <button class="btn primary" id="p-retry" type="button">Retry</button>
+            <button class="btn" id="p-skip" type="button">Next channel</button>
+          </div>
+        </div>
+        <div class="p-upnext" id="p-upnext" hidden>
+          <span class="eyebrow">Up next</span><strong id="p-upnext-name"></strong>
+          <div class="p-error-actions"><button class="btn primary" id="p-upnext-play" type="button">Play now</button><button class="btn" id="p-upnext-cancel" type="button">Cancel</button></div>
+        </div>
+        <div class="p-osd" id="p-osd" aria-hidden="true"></div>
+        <div class="p-menu" id="p-menu" role="menu" aria-label="Tracks" hidden></div>
+        <div class="p-top">
+          <button class="icon-btn" id="p-close" type="button" aria-label="Close player"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#back"></use></svg></button>
+          <div class="p-titles"><strong id="p-title"></strong><span id="p-sub"></span></div>
+          <span class="badge live-badge" id="p-live" hidden>LIVE</span>
+          <button class="icon-btn" id="p-diag" type="button" aria-label="Playback diagnostics (I)"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#info"></use></svg></button>
+        </div>
+        <div class="p-bar" id="p-bar">
+          <div class="p-seek" id="p-seek-wrap" hidden>
+            <span class="p-time" id="p-pos">0:00</span>
+            <input class="range" id="p-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Seek">
+            <span class="p-time" id="p-dur">0:00</span>
+          </div>
+          <div class="p-row">
+            <button class="icon-btn" id="p-play" type="button" aria-label="Play"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#play"></use></svg></button>
+            <button class="icon-btn vod-only" id="p-back10" type="button" aria-label="Back 10 seconds"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#back10"></use></svg></button>
+            <button class="icon-btn vod-only" id="p-fwd10" type="button" aria-label="Forward 30 seconds"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#fwd30"></use></svg></button>
+            <button class="icon-btn live-only" id="p-chdown" type="button" aria-label="Previous channel in list (Down)"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#chdown"></use></svg></button>
+            <button class="icon-btn live-only" id="p-chup" type="button" aria-label="Next channel in list (Up)"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#chup"></use></svg></button>
+            <button class="icon-btn live-only" id="p-last" type="button" aria-label="Last channel (B)"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#swap"></use></svg></button>
+            <span class="p-grow"></span>
+            <button class="icon-btn" id="p-mute" type="button" aria-label="Mute (M)"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#volume"></use></svg></button>
+            <input class="range p-vol" id="p-vol" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+            <button class="icon-btn live-only" id="p-quality" type="button" aria-label="Quality" aria-haspopup="menu" hidden><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#quality"></use></svg></button>
+            <button class="icon-btn vod-only" id="p-cc" type="button" aria-label="Subtitles (C)" aria-haspopup="menu" hidden><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#cc"></use></svg></button>
+            <button class="icon-btn vod-only" id="p-audio" type="button" aria-label="Audio track" aria-haspopup="menu" hidden><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#audio"></use></svg></button>
+            <button class="icon-btn" id="p-airplay" type="button" aria-label="AirPlay" hidden><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#airplay"></use></svg></button>
+            <button class="icon-btn" id="p-pip" type="button" aria-label="Picture in picture (P)"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#pip"></use></svg></button>
+            <button class="icon-btn" id="p-fs" type="button" aria-label="Fullscreen (F)"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#fullscreen"></use></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="p-info" id="p-info"></div>
+    </section>
+    <div class="view" id="view" tabindex="-1"></div>
+  </main>
+
+  <nav class="tabbar" aria-label="Sections">
+    <a href="#/live" data-nav="live"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#live"></use></svg><span>Live</span></a>
+    <a href="#/sports" data-nav="sports"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#ball"></use></svg><span>Sports</span></a>
+    <a href="#/movies" data-nav="movies"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#film"></use></svg><span>Movies</span></a>
+    <a href="#/series" data-nav="series"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#series"></use></svg><span>Series</span></a>
+    <a href="#/search" data-nav="search"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#search"></use></svg><span>Search</span></a>
+    <a href="#/library" data-nav="library"><svg class="ico" aria-hidden="true"><use href="/tv/static/icons.svg#library"></use></svg><span>Library</span></a>
+  </nav>
+</div>
+
+<div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+<section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden></section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<noscript><p class="noscript">This app needs JavaScript.</p></noscript>
+</body>
+</html>

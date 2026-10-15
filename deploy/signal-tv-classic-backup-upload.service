@@ -1,0 +1,27 @@
+# /etc/systemd/system/signal-tv-classic-backup-upload.service
+# Started by signal-tv-classic-backup.service when it succeeds. Copies the user-state backups
+# (favourites, progress, history, preferences - no tv.env, no credentials) to Google Drive
+# with the owner's rclone remote; copies older than 90 days are deleted there.
+# If Google's sign-in has expired: rclone config reconnect gdrive:   (see README)
+[Unit]
+Description=Upload Signal TV Classic user-state backups to Google Drive
+Wants=network-online.target
+After=network-online.target
+# Telegram alert if it fails; a "resolved" note when it next works (tvapp/alerts.py)
+OnFailure=signal-tv-classic-alert@failed:%n.service
+OnSuccess=signal-tv-classic-alert@ok:%n.service
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/opt/signal-tv-classic
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/signal-tv-classic/venv/bin/python -m tvapp.backup --upload gdrive:signal-tv-classic-backups
+TimeoutStartSec=15min
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+# rclone refreshes its Google token in rclone.conf
+ReadWritePaths=/home/pi/.config/rclone -/home/pi/.cache/rclone

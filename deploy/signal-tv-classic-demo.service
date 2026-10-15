@@ -1,0 +1,38 @@
+[Unit]
+Description=Signal TV Classic demo provider (legal test streams on 127.0.0.1:8791)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=signal-tv-classic
+Group=signal-tv-classic
+WorkingDirectory=/opt/signal-tv-classic/demo
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DEMO_MEDIA=/opt/signal-tv-classic/demo/media
+ExecStart=/opt/signal-tv-classic/venv/bin/python /opt/signal-tv-classic/demo/demo_provider.py
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+MemoryMax=256M
+TasksMax=64
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=signal-tv-classic-demo
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

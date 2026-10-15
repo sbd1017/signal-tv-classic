@@ -1,0 +1,150 @@
+#!/bin/bash
+# iptv - manage Signal TV Classic (https://example.com/tv) on this Pi.
+# Secrets are always read with a hidden prompt and passed on stdin (never argv).
+set -euo pipefail
+
+SERVICE=signal-tv-classic
+DEMO=signal-tv-classic-demo
+ENV_FILE=/etc/signal-tv-classic/tv.env
+PY=/opt/signal-tv-classic/venv/bin/python
+API=http://127.0.0.1:8790/tv/api
+DEMO_URL=http://127.0.0.1:8791
+
+helper() { sudo env TV_CONFIG="$ENV_FILE" "$PY" -c 'import sys; sys.path.insert(0, "/opt/signal-tv-classic"); from tvapp.cli import main; sys.argv[0] = "iptv"; sys.exit(main())' "$@"; }
+setval() { printf '%s\n' "$2" | helper set "$1"; }
+ask() {  # ask VAR "Prompt" [secret]
+  local __v
+  if [ "${3:-}" = secret ]; then read -r -s -p "$2: " __v; echo; else read -r -p "$2: " __v; fi
+  printf -v "$1" '%s' "$__v"
+}
+valid_url() { printf '%s\n' "$1" | helper check-url; }
+reload_app() {
+  if systemctl is-active --quiet "$SERVICE"; then
+    sudo systemctl reload "$SERVICE" && echo "Reloaded: catalogue and guide are refreshing (iptv status to watch)."
+  else
+    echo "Service is not running - start it with: iptv start"
+  fi
+}
+upload_status() {
+  local res at
+  res=$(systemctl show -p Result --value signal-tv-classic-backup-upload.service)
+  at=$(systemctl show -p ExecMainExitTimestamp --value signal-tv-classic-backup-upload.service)
+  if [ -z "$at" ]; then echo "Google Drive upload: not run yet"
+  elif [ "$res" = success ]; then echo "Google Drive upload: OK ($at)"
+  else echo "Google Drive upload: FAILED ($at) - NEEDS ATTENTION: journalctl -u signal-tv-classic-backup-upload -n 20"
+       echo "                     ('invalid_grant' = Google sign-in expired: README > System backups)"; fi
+}
+warn_argv() { echo "note: values given on the command line end up in your shell history; run without it to be prompted." >&2; }
+
+usage() {
+  cat <<'USAGE'
+iptv - manage Signal TV Classic (https://example.com/tv)
+
+  iptv status              service state, provider, catalogue/guide counts, active streams
+  iptv show-config         current settings (URLs and credentials masked)
+  iptv config              edit /etc/signal-tv-classic/tv.env (sudoedit), then reload
+  iptv set-provider m3u|xtream
+  iptv set-playlist        prompt for the M3U/M3U8 URL (hidden), switch to m3u, reload
+  iptv set-epg             prompt for the XMLTV guide URL (hidden; empty = none), reload
+  iptv set-xtream          prompt for Xtream server URL, username, password, switch to xtream, reload
+  iptv use-demo            point at the built-in demo provider (legal test streams), reload
+  iptv demo on|off         start+enable / stop+disable the demo provider service
+  iptv refresh             refresh catalogue + guide now (same as reload)
+  iptv refresh --accept-changes   refresh and accept the result even if it looks wrong (after a rejected refresh)
+  iptv alert-test          send a test Telegram alert
+  iptv reload              re-read tv.env and refresh, without dropping the service
+  iptv restart             restart the service (stops all streams)
+  iptv start | stop        start / stop the service
+  iptv logs [-f] [N]       last N (default 100) log lines; -f to follow
+  iptv jobs                active stream jobs (ffmpeg)
+  iptv revoke-sessions     sign out every remembered browser/home-screen app
+  iptv backup              back up synced state + config + code now (also runs daily; user data then goes to Google Drive)
+  iptv backups             list backups and the last Google Drive upload
+USAGE
+}
+
+cmd=${1:-help}; shift || true
+case "$cmd" in
+  status)
+    systemctl --no-pager --lines=0 status "$SERVICE" | sed -n '1,4p' || true
+    systemctl is-active --quiet "$DEMO" && echo "demo provider: running" || echo "demo provider: stopped"
+    if out=$(curl -fsS --max-time 5 "$API/status" 2>/dev/null); then
+      printf '%s' "$out" | "$PY" -c 'import sys; sys.path.insert(0, "/opt/signal-tv-classic"); from tvapp.cli import main; sys.argv[0] = "iptv"; sys.exit(main())' format-status
+    else
+      echo "API not answering on 127.0.0.1:8790"
+    fi
+    last=$(ls -t /var/backups/signal-tv-classic/signal-tv-classic-*.tar.gz 2>/dev/null | head -1)
+    echo "backups:       ${last:-none yet}"
+    upload_status ;;
+  show-config) helper show ;;
+  config)
+    sudoedit "$ENV_FILE"
+    sudo chown root:signal-tv-classic "$ENV_FILE"; sudo chmod 0640 "$ENV_FILE"
+    reload_app ;;
+  set-provider)
+    p=${1:-}; [[ "$p" == m3u || "$p" == xtream ]] || { echo "usage: iptv set-provider m3u|xtream"; exit 2; }
+    setval IPTV_PROVIDER_TYPE "$p"; reload_app ;;
+  set-playlist)
+    if [ $# -ge 1 ]; then warn_argv; url=$1; else ask url "M3U/M3U8 playlist URL (input hidden)" secret; fi
+    valid_url "$url" || { echo "That is not an http(s) URL."; exit 1; }
+    setval IPTV_M3U_URL "$url"; setval IPTV_PROVIDER_TYPE m3u; unset url
+    reload_app ;;
+  set-epg)
+    if [ $# -ge 1 ]; then warn_argv; url=$1; else ask url "XMLTV guide URL, .xml or .xml.gz (input hidden; empty = none)" secret; fi
+    if [ -n "$url" ]; then valid_url "$url" || { echo "That is not an http(s) URL."; exit 1; }; fi
+    setval IPTV_EPG_URL "$url"; unset url
+    reload_app ;;
+  set-xtream)
+    ask base "Xtream server URL (e.g. http://host:8080)"
+    valid_url "$base" || { echo "That is not an http(s) URL."; exit 1; }
+    ask user "Username"
+    ask pass "Password (input hidden)" secret
+    [ -n "$user" ] && [ -n "$pass" ] || { echo "Username and password are required."; exit 1; }
+    setval XTREAM_BASE_URL "${base%/}"; setval XTREAM_USERNAME "$user"; setval XTREAM_PASSWORD "$pass"
+    setval IPTV_PROVIDER_TYPE xtream; unset pass
+    echo "Saved. (Guide: leave IPTV_EPG_URL empty to use the panel's xmltv.php, or run iptv set-epg.)"
+    reload_app ;;
+  use-demo)
+    sudo systemctl enable --now "$DEMO" >/dev/null
+    setval IPTV_PROVIDER_TYPE m3u
+    setval IPTV_M3U_URL "$DEMO_URL/playlist.m3u"
+    setval IPTV_EPG_URL "$DEMO_URL/epg.xml.gz"
+    reload_app ;;
+  demo)
+    case "${1:-}" in
+      on) sudo systemctl enable --now "$DEMO" && echo "demo provider running on $DEMO_URL" ;;
+      off) sudo systemctl disable --now "$DEMO" && echo "demo provider stopped" ;;
+      *) echo "usage: iptv demo on|off"; exit 2 ;;
+    esac ;;
+  refresh)
+    if [ "${1:-}" = --accept-changes ]; then
+      curl -fsS --max-time 10 "$API/refresh?accept=1" >/dev/null && echo "The next catalogue refresh will be accepted even if it looks wrong; refreshing now (iptv status to watch)." || echo "API not answering"
+    else reload_app; fi ;;
+  reload) reload_app ;;
+  alert-test) sudo -u signal-tv-classic env TV_STATE_DIR=/var/lib/signal-tv-classic "$PY" -c 'import sys; sys.path.insert(0, "/opt/signal-tv-classic"); from tvapp.alerts import main; sys.exit(main(["test"]))' ;;
+  restart) sudo systemctl restart "$SERVICE" && echo "restarted" ;;
+  start) sudo systemctl start "$SERVICE" && echo "started" ;;
+  stop) sudo systemctl stop "$SERVICE" && echo "stopped" ;;
+  logs)
+    follow=(); n=100
+    for a in "$@"; do case "$a" in -f) follow=(-f) ;; *[!0-9]*) ;; *) n=$a ;; esac; done
+    sudo journalctl -u "$SERVICE" -u "$DEMO" -n "$n" --no-pager -o short-iso "${follow[@]}" ;;
+  jobs) curl -fsS --max-time 5 "$API/status" | python3 -c 'import json,sys; [print(j) for j in json.load(sys.stdin)["jobs"]] or None' ;;
+  revoke-sessions)
+    sudo rm -f /var/lib/signal-tv-classic/secret.key
+    sudo systemctl restart "$SERVICE"
+    echo "All remembered sessions are signed out; browsers will ask for the site login again." ;;
+  backup)
+    sudo systemctl start signal-tv-classic-backup.service
+    f=$(sudo find /var/backups/signal-tv-classic -maxdepth 1 -name 'signal-tv-classic-*.tar.gz' -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
+    echo "Backup written: $f"
+    echo "It contains the provider credentials (tv.env): keep copies private."
+    sleep 1                                      # the Drive upload starts when the backup succeeds
+    for _ in $(seq 1 120); do
+      case $(systemctl show -p ActiveState --value signal-tv-classic-backup-upload.service) in activating|active) sleep 1 ;; *) break ;; esac
+    done
+    upload_status ;;
+  backups) sudo ls -lh /var/backups/signal-tv-classic/ /var/backups/signal-tv-classic/user-state/; upload_status ;;
+  help|-h|--help) usage ;;
+  *) usage; exit 2 ;;
+esac

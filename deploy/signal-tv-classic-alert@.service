@@ -1,0 +1,26 @@
+# /etc/systemd/system/signal-tv-classic-alert@.service - Telegram alert when a TV unit fails, and a
+# "resolved" note when it next succeeds (only if an alert had gone out). Started by OnFailure= /
+# OnSuccess= in signal-tv-classic.service, signal-tv-classic-backup.service, signal-tv-classic-backup-upload.service
+# as signal-tv-classic-alert@failed:<unit>.service / @ok:<unit>.service. Rules: tvapp/alerts.py
+# (dedup + backoff, redaction). Credentials: /etc/signal-tv-classic/telegram.env (absent = alerts off).
+[Unit]
+Description=Signal TV Classic alert (%i)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=signal-tv-classic
+Group=signal-tv-classic
+WorkingDirectory=/opt/signal-tv-classic
+Environment=PYTHONDONTWRITEBYTECODE=1 TV_STATE_DIR=/var/lib/signal-tv-classic
+ExecStart=/opt/signal-tv-classic/venv/bin/python -m tvapp.alerts %i
+TimeoutStartSec=60
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/signal-tv-classic
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

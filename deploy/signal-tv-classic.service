@@ -1,0 +1,64 @@
+[Unit]
+Description=Signal TV Classic (private IPTV + VOD web app behind https://example.com/tv)
+After=network-online.target
+Wants=network-online.target
+# Telegram alert only if systemd gives up restarting it (tvapp/alerts.py)
+OnFailure=signal-tv-classic-alert@failed:%n.service
+
+[Service]
+Type=simple
+User=signal-tv-classic
+Group=signal-tv-classic
+WorkingDirectory=/opt/signal-tv-classic
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+Environment=TV_HOST=127.0.0.1 TV_PORT=8790 TV_CONFIG=/etc/signal-tv-classic/tv.env TV_WEB_DIR=/opt/signal-tv-classic/web TV_LIVE_DIR=/dev/shm/signal-tv-classic
+ExecStart=/opt/signal-tv-classic/venv/bin/python -m tvapp
+# `iptv reload` / `iptv refresh`: re-read tv.env and refresh catalogue + guide without a restart
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+StateDirectory=signal-tv-classic
+StateDirectoryMode=0700
+CacheDirectory=signal-tv-classic
+CacheDirectoryMode=0700
+UMask=0077
+# ffmpeg children live in this unit's cgroup: stopping/restarting kills them all
+KillMode=control-group
+TimeoutStopSec=15
+# Measured: ~550-700 MB normally, peaks ~1.0-1.2 GB during a catalogue refresh. MemoryMax is
+# only enforced when the kernel's memory cgroup is enabled, which it is not on this Pi (see
+# docs/INFRA-memory-cgroups.md). Meanwhile the app's own guard (tvapp/memguard.py) restarts
+# it - via the exit code + Restart=on-failure below - if it stays over TV_MEMORY_LIMIT_MB.
+MemoryMax=2G
+Environment=TV_MEMORY_LIMIT_MB=2048
+TasksMax=256
+CPUWeight=80
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=signal-tv-classic
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/dev/shm
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

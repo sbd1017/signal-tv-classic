@@ -1,0 +1,17 @@
+{
+  "name": "TV",
+  "short_name": "TV",
+  "description": "Private live TV, movies and series",
+  "id": "/tv/",
+  "start_url": "/tv/#/live",
+  "scope": "/tv/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "icons": [
+    { "src": "/tv/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/tv/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/tv/pwa/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

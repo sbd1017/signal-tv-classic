@@ -1,0 +1,11 @@
+# /etc/systemd/system/signal-tv-classic-backup.timer
+[Unit]
+Description=Daily backup of Signal TV Classic
+
+[Timer]
+OnCalendar=*-*-* 03:50:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

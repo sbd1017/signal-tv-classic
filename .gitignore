@@ -1,0 +1,8 @@
+# never commit secrets or bulky generated data
+*.env
+!tv.env.example
+venv/
+.venv/
+var/
+__pycache__/
+demo/media/
