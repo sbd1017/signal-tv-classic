@@ -1,10 +1,10 @@
 // One <video> element for everything. Live channels play docked in the Live view;
 // movies/episodes play in a full-window overlay. Channel switches only swap the
 // source - the page never reloads.
-import { api, BASE, clientId, ApiError, fmtTime, setIcon, toast } from './api.js?v=20261013233000';
-import * as store from './store.js?v=20261013233000';
-import * as tracks from './tracks.js?v=20261013233000';
-import * as caps from './caps.js?v=20261013233000';
+import { api, BASE, clientId, ApiError, fmtTime, setIcon, toast } from './api.js?v=20261016190000';
+import * as store from './store.js?v=20261016190000';
+import * as tracks from './tracks.js?v=20261016190000';
+import * as caps from './caps.js?v=20261016190000';
 
 const $ = (id) => document.getElementById(id);
 const UA = navigator.userAgent;
@@ -17,7 +17,7 @@ function loadHls() {
   if (HlsLib) return Promise.resolve(HlsLib);
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = '/tv/static/vendor/hls.min.js?v=20261013233000';
+    s.src = '/tv/static/vendor/hls.min.js?v=20261016190000';
     s.onload = () => (window.Hls ? resolve((HlsLib = window.Hls)) : reject(new Error('hls.js missing')));
     s.onerror = () => reject(new Error('Could not load the HLS player.'));
     document.head.append(s);

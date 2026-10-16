@@ -1,11 +1,13 @@
 // Signal TV Classic - app shell, router and views. No framework; all provider text is
 // inserted with textContent (never innerHTML).
 import { api, catalogue, cached, dropCatalogue, epgNow, fold, search, searchGuide, sortedItems, usedCats, h, icon, setIcon, thumb,
-  chunked, toast, fmtClock, fmtDuration, fmtTime, img } from './api.js?v=20261013233000';
-import * as caps from './caps.js?v=20261013233000';
-import * as store from './store.js?v=20261013233000';
-import { Player } from './player.js?v=20261013233000';
-import * as tracks from './tracks.js?v=20261013233000';
+  chunked, toast, fmtClock, fmtDuration, fmtTime, img } from './api.js?v=20261016190000';
+import * as caps from './caps.js?v=20261016190000';
+import * as store from './store.js?v=20261016190000';
+import { Player } from './player.js?v=20261016190000';
+import * as tracks from './tracks.js?v=20261016190000';
+import * as lang from './lang.js?v=20261016190000';
+import * as names from './names.js?v=20261016190000';
 
 const $ = (id) => document.getElementById(id);
 const view = $('view');
@@ -61,7 +63,7 @@ function lastChannel() {
 }
 
 // ------------------------------------------------------------------ router
-const SECTIONS = ['live', 'sports', 'movies', 'series', 'search', 'library', 'continue', 'favourites', 'recent'];
+const SECTIONS = ['live', 'sports', 'movies', 'series', 'search', 'library', 'continue', 'favourites', 'recent', 'settings'];
 
 function parseHash() {
   const [sec, id] = location.hash.replace(/^#\/?/, '').split('/');
@@ -75,12 +77,15 @@ function route() {
       player.stop();
       player.showMode('off');
       main.classList.remove('live-playing');
+    } else if (state.section === 'live' && sec !== 'live' && !player.item) {
+      player.showMode('off');                       // the "Last watched / Resume" card belongs to Live TV only
+      main.classList.remove('live-playing');
     }
     state.section = sec;
     render();
   }
   for (const a of document.querySelectorAll('[data-nav]')) {
-    const on = a.dataset.nav === sec || (a.dataset.nav === 'library' && ['continue', 'favourites', 'recent'].includes(sec));
+    const on = a.dataset.nav === sec || (a.dataset.nav === 'library' && ['continue', 'favourites', 'recent', 'settings'].includes(sec));
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   }
   if (id && (sec === 'movies' || sec === 'series')) openDetails(sec, id);
@@ -92,9 +97,9 @@ function render(keepScroll = false) {
   main.classList.toggle('live-mode', state.section === 'live');
   if (!keepScroll) window.scrollTo(0, 0);
   const fn = { live: viewLive, sports: viewSports, movies: () => viewGrid('movies'), series: () => viewGrid('series'), search: viewSearch,
-    library: viewLibrary, continue: viewLibrary, favourites: viewLibrary, recent: viewLibrary }[state.section];
+    library: viewLibrary, continue: viewLibrary, favourites: viewLibrary, recent: viewLibrary, settings: viewSettings }[state.section];
   fn();
-  document.title = { live: 'Live TV', sports: 'Sports', movies: 'Movies', series: 'Series', search: 'Search' }[state.section] || 'Library';
+  document.title = { live: 'Live TV', sports: 'Sports', movies: 'Movies', series: 'Series', search: 'Search', settings: 'Settings' }[state.section] || 'Library';
   document.title += ' · TV';
 }
 
@@ -201,6 +206,60 @@ function selectEl(label, options, value, onchange) {
 function viewHead(title, ...extra) {
   return h('header', { class: 'view-head' }, h('h1', { text: title }), h('div', { class: 'view-head-extra' }, ...extra));
 }
+
+// ------------------------------------------------------------------ live or replay
+// Many channels re-air a match "live" days later with nothing in the guide to say so. The Pi's
+// sidecar (the new interface's tvnext/fixtures.py) knows the real fixture dates: asked for live
+// football, basketball and NFL games with two known teams. Without the sidecar the guide's own
+// reading stands.
+const fixtureIdx = new Map();
+const FX_SPORTS = new Set(['football', 'basketball', 'nfl']);
+const fxKey = (ev) => (FX_SPORTS.has(ev.sport) && (ev.teams || []).length === 2 && ev.teams.every((t) => String(t).startsWith('team:'))
+  ? `${ev.teams[0]}|${ev.teams[1]}|${ev.start}` : '');
+async function checkFixtures(evs) {
+  const want = [...new Set(evs.filter((e) => e.when === 'live' && !e.replay).map(fxKey))].filter((k) => k && !fixtureIdx.has(k));
+  let found = false;
+  let pending = 0;
+  for (let i = 0; i < want.length; i += 80) {
+    try {
+      const res = await fetch(`/tv/next/api/fixtures?${new URLSearchParams({ q: want.slice(i, i + 80).join(',') })}`, { credentials: 'same-origin' });
+      if (!res.ok) break;
+      const d = await res.json();
+      for (const [k, v] of Object.entries(d.items || {})) { fixtureIdx.set(k, v); found = found || !!v.replay; }
+      pending += d.pending || 0;
+    } catch { break; }
+  }
+  return { found, pending };
+}
+// ...and from the real kick-off on ESPN's scoreboards (the sidecar's tvnext/scores.py): an airing that
+// starts long after it is a replay. Only that verdict is used here; Classic shows no scores.
+const kickoffIdx = new Map();
+const koKey = (ev) => {
+  if (!FX_SPORTS.has(ev.sport) || (ev.kind && ev.kind !== 'match')) return '';
+  const ids = (ev.teams || []).filter((t) => String(t).startsWith('team:'));
+  const pair = ids.length === 2 ? ids : (names.teams(ev.title) || []).map((l) => `name:${String(l).replace(/[|,]/g, ' ').trim().slice(0, 60)}`);
+  return pair.length === 2 && pair.every((p) => p.length > 5) ? `${ev.comp_id || 'comp:none'}|${pair[0]}|${pair[1]}|${ev.start}` : '';
+};
+async function checkKickoffs(evs) {
+  const want = [...new Set(evs.filter((e) => e.when === 'live' && !e.replay && !withFixture(e).replay).map(koKey))]
+    .filter((k) => k && !kickoffIdx.has(k)).slice(0, 40);
+  if (!want.length) return false;
+  let found = false;
+  try {
+    const res = await fetch(`/tv/next/api/scores?${new URLSearchParams({ q: want.join(',') })}`, { credentials: 'same-origin' });
+    const d = res.ok ? await res.json() : { items: {} };
+    for (const k of want) {
+      const v = (d.items || {})[k];
+      kickoffIdx.set(k, !!(v && v.replay));
+      found = found || !!(v && v.replay);
+    }
+  } catch { /* no sidecar */ }
+  return found;
+}
+const withFixture = (ev) => {
+  const v = fixtureIdx.get(fxKey(ev));
+  return (v && v.replay) || kickoffIdx.get(koKey(ev)) ? { ...ev, replay: true } : ev;
+};
 
 // ------------------------------------------------------------------ LIVE
 let guideData = {};
@@ -409,7 +468,7 @@ async function viewLive() {
   function programmeRow(ev) {
     const now = Date.now() / 1000;
     const head = h('div', { class: 'prog-head' });
-    if (ev.when === 'live') head.append(h('span', { class: 'badge live-badge', text: 'LIVE' }));
+    if (ev.when === 'live') head.append(h('span', { class: `badge ${ev.replay ? 'replay-badge' : 'live-badge'}`, text: ev.replay ? 'REPLAY' : 'LIVE' }));
     else head.append(h('span', { class: `prog-when ${ev.when}`, text: whenText(ev.start, now) }));
     head.append(h('strong', { class: `prog-title ${isFavEvent(ev.fav_ids) ? 'is-fav' : ''}`, text: ev.title }));
     const rows = [head, h('div', { class: 'prog-time muted small' }, `${fmtClock(ev.start)} – ${fmtClock(ev.stop)}`,
@@ -689,11 +748,23 @@ async function viewSports() {
     days.append(b);
   }
 
+  // replays the guide doesn't mark: the Pi's fixture dates (the new interface's sidecar) say so
+  let fxTries = 0;
+  async function fixtures() {
+    const evs = (pick.sport === 'foryou' ? mine && mine.events : data && data.events) || [];
+    const r = await checkFixtures(evs);
+    const late = await checkKickoffs(evs);
+    if (state.section !== 'sports') return;
+    if (r.found || late) paint();
+    if (r.pending && fxTries++ < 3) setTimeout(fixtures, 8000);
+  }
+
   async function reload(force = false) {
     list.classList.add('busy');
     try { await load(force); } catch (e) { list.replaceChildren(errorBox(e.message, () => render())); return; }
     finally { list.classList.remove('busy'); }
     paint();
+    fixtures();
   }
 
   function visible(events) {
@@ -740,13 +811,15 @@ async function viewSports() {
     paintChips();
     const foryou = pick.sport === 'foryou';
     if (foryou && !mine) { reload(); return; }
-    const evs = visible(foryou ? mine.events : data.events);
+    const evs = visible(foryou ? mine.events : data.events).map(withFixture);
     count.textContent = `${evs.length} event${evs.length === 1 ? '' : 's'}`;
-    const secs = foryou ? [['live', 'Live now'], ['soon', 'Starting soon'], ['later', 'Later today'], ['tomorrow', 'Tomorrow']]
-      : pick.day === 'today' ? [['live', 'Live now'], ['soon', 'Starting soon'], ['later', 'Later today']] : [['all', 'Tomorrow']];
+    // replays airing now get their own section after the live games, never mixed in with them
+    const secs = foryou ? [['live', 'Live now'], ['replay', 'Replays on now'], ['soon', 'Starting soon'], ['later', 'Later today'], ['tomorrow', 'Tomorrow']]
+      : pick.day === 'today' ? [['live', 'Live now'], ['replay', 'Replays on now'], ['soon', 'Starting soon'], ['later', 'Later today']] : [['all', 'Tomorrow']];
+    const isWhen = (e, when) => (when === 'replay' ? e.when === 'live' && !!e.replay : when === 'live' ? e.when === 'live' && !e.replay : e.when === when);
     const out = [];
     for (const [when, title] of secs) {
-      const items = evs.filter((e) => when === 'all' || (foryou ? (when === 'tomorrow' ? e.day === 'tomorrow' : e.day === 'today' && e.when === when) : e.when === when));
+      const items = evs.filter((e) => when === 'all' || (foryou ? (when === 'tomorrow' ? e.day === 'tomorrow' : e.day === 'today' && isWhen(e, when)) : isWhen(e, when)));
       if (!items.length) continue;
       if (when !== 'live') items.sort((a, b) => a.start - b.start || b.score - a.score);
       out.push(section(when, title, items));
@@ -802,11 +875,12 @@ async function viewSports() {
     const now = Date.now() / 1000;
     const best = ev.feeds[0];
     const top = h('div', { class: 'sp-top' });
-    if (ev.when === 'live') top.append(h('span', { class: 'badge live-badge', text: 'LIVE' }));
+    // a replay on now is never shown as LIVE
+    if (ev.when === 'live') top.append(h('span', { class: `badge ${ev.replay ? 'replay-badge' : 'live-badge'}`, text: ev.replay ? 'REPLAY' : 'LIVE' }));
     else top.append(h('span', { class: `prog-when ${ev.when}`, text: whenText(ev.start, now) }));
     const meta = [ev.comp, ['all', 'foryou'].includes(pick.sport) || !ev.comp ? SPORT_NAMES[ev.sport] : ''].filter(Boolean).join(' · ');
     if (meta) top.append(h('span', { class: 'sp-comp', text: meta }));
-    if (ev.replay) top.append(h('span', { class: 'sp-tag', text: 'Replay' }));
+    if (ev.replay && ev.when !== 'live') top.append(h('span', { class: 'sp-tag', text: 'Replay' }));
     if (ev.youth) top.append(h('span', { class: 'sp-tag', text: 'Youth' }));
     const ids = [...(ev.teams || []), ev.comp_id].filter(Boolean);
     const main = h('button', { class: 'sp-main', type: 'button', 'aria-label': `Play ${ev.title} on ${best.ch.name}` },
@@ -816,7 +890,7 @@ async function viewSports() {
       h('span', { class: 'sp-best' }, icon('play', 'ico sm'), thumb(best.ch.img, best.ch.name, 'logo sm'),
         h('span', { class: 'prog-ch-name', text: best.ch.name }), qualityBadge(best)));
     main.addEventListener('click', () => playChannel(best.ch));
-    const li = h('li', { class: `sp-card ${ev.when === 'live' ? 'is-live' : ''} ${isFavEvent(ids) ? 'is-fav' : ''}` }, main);
+    const li = h('li', { class: `sp-card ${ev.when === 'live' && !ev.replay ? 'is-live' : ''} ${isFavEvent(ids) ? 'is-fav' : ''}` }, main);
     const fav = favControl(ev, li);
     if (fav) li.append(...fav);
     const others = ev.feeds.length - 1 + (ev.more || 0);
@@ -837,6 +911,7 @@ async function viewSports() {
   }
 
   paint();
+  fixtures();
   // another device changed favourites or hidden channels: show it (For You asks the Pi again)
   state.redraw = (changed) => {
     if (changed.has('sfav') && pick.sport === 'foryou') reload();
@@ -985,18 +1060,21 @@ async function viewGrid(kind) {
   }));
   const sortSel = selectEl('Sort', sorts, sort, (v) => { sort = v; store.prefs.set(pk + 'sort', v); draw(); });
   sortSel.classList.add('sort-sel');
+  const langSel = selectEl('Language', langPrefs(), langPref(), (v) => { store.prefs.set('catLang', v); draw(); });
+  langSel.classList.add('sort-sel');
+  langSel.title = 'Your language is chosen in Settings';
   const q = h('input', { class: 'input', type: 'search', placeholder: `Filter ${title.toLowerCase()}`, 'aria-label': `Filter ${title.toLowerCase()}`, enterkeyhint: 'search', autocomplete: 'off' });
   q.value = state.gridQuery[kind] || '';
   let qTimer = 0;
   q.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.gridQuery[kind] = q.value; draw(); }, 150); });
   head.lastChild.append(count);
-  body.replaceChildren(h('div', { class: 'filters' }, h('div', { class: 'filter-row' }, catBtn, sortSel, q)), grid);
+  body.replaceChildren(h('div', { class: 'filters' }, h('div', { class: 'filter-row' }, catBtn, sortSel, langSel, q)), grid);
   let stop = null;
   function draw() {
     const hc = store.hidden.cats(hideKind);
     const name = cat ? (extra.find(([k]) => k === cat) || [])[1] || list.cats.get(cat) || 'Category' : 'All categories';
     catBtn.textContent = `${name}${hc.size ? ` · ${hc.size} hidden` : ''}`;
-    let items = sortedItems(list, sort);                 // sorted once per session; filtering keeps the order
+    let items = langItems(list, sort, langPref());       // sorted once per session; filtering keeps the order
     if (cat === '__fav') { const f = store.favs.all(); items = items.filter((i) => f[i.id]); } else if (cat) items = items.filter((i) => i.cat === cat);
     else if (hc.size) items = items.filter((i) => !hc.has(i.cat));
     const terms = fold(q.value).split(/\s+/).filter(Boolean);
@@ -1012,7 +1090,10 @@ async function viewGrid(kind) {
   }
   draw();
   state.cleanup.push(() => clearTimeout(qTimer));
-  state.redraw = (changed) => { if (changed.has('hide') || (cat === '__fav' && changed.has('fav'))) draw(); };
+  state.redraw = (changed) => {
+    if (changed.has('pref') && langSel.value !== langPref()) { langSel.value = langPref(); draw(); }
+    if (changed.has('hide') || (cat === '__fav' && changed.has('fav'))) draw();
+  };
   state.cleanup.push(() => stop && stop(), () => { state.redraw = null; });
 }
 
@@ -1261,7 +1342,9 @@ async function viewSearch() {
     for (const k of ['movies', 'series']) {
       if (!loaded[k]) continue;
       const hc = store.hidden.cats(STORE_KIND[k]);
-      const r = search(loaded[k], q, 48, hc.size ? (i) => !hc.has(i.cat) : null);
+      const pref = langPref();
+      let r = search(loaded[k], q, pref === 'all' ? 48 : 96, hc.size ? (i) => !hc.has(i.cat) : null);
+      if (pref !== 'all') r = lang.rankByLanguage(lang.applyLangPref(r, pref, vinfo), vinfo).slice(0, 48);
       total += r.length;
       if (r.length) sections.push(h('section', {}, h('h2', { class: 'section-title', text: `${k === 'movies' ? 'Movies' : 'Series'} (${r.length})` }), h('div', { class: 'grid' }, r.map((it) => cardFor(k, it)))));
     }
@@ -1342,23 +1425,111 @@ function viewLibrary() {
   if (!rec.length) recRow.append(emptyBox('Nothing yet', 'Channels and titles you play will appear here.'));
   const clearBtn = rec.length ? h('button', { class: 'btn ghost small', type: 'button', text: 'Clear', onclick: () => { store.recent.clear(); render(true); } }) : null;
 
-  const statusBox = h('section', { class: 'lib-section status-card', id: 'lib-status' });
-  const backupBox = h('section', { class: 'lib-section status-card', id: 'lib-backup' });
-  const tracksBox = h('section', { class: 'lib-section status-card', id: 'lib-tracks' });
-  view.replaceChildren(viewHead('Library'),
+  view.replaceChildren(viewHead('Library', settingsLink()),
     sec('continue', 'Continue Watching', cont),
     sec('favourites', 'Favourites', favWrap),
-    sec('recent', 'Recent', recRow, clearBtn),
-    tracksBox,
-    backupBox,
-    statusBox);
-  renderTrackPrefs(tracksBox);
-  renderBackup(backupBox);
-  renderStatus(statusBox);
+    sec('recent', 'Recent', recRow, clearBtn));
   if (which !== 'library') {
     const target = $(`lib-${which}`);
     if (target) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
   }
+}
+
+// ------------------------------------------------------------------ SETTINGS
+function settingsLink() {
+  return h('a', { class: 'btn ghost small settings-link', href: '#/settings', 'aria-label': 'Settings' }, icon('settings'), h('span', { text: 'Settings' }));
+}
+
+function viewSettings() {
+  const langBox = h('section', { class: 'lib-section status-card', id: 'set-language' });
+  const tracksBox = h('section', { class: 'lib-section status-card', id: 'lib-tracks' });
+  const uiBox = h('section', { class: 'lib-section status-card', id: 'lib-interface', hidden: true });
+  const backupBox = h('section', { class: 'lib-section status-card', id: 'lib-backup' });
+  const statusBox = h('section', { class: 'lib-section status-card', id: 'lib-status' });
+  view.replaceChildren(viewHead('Settings'), langBox, tracksBox, uiBox, backupBox, statusBox);
+  renderCatalogueLang(langBox);
+  renderTrackPrefs(tracksBox);
+  renderInterface(uiBox);
+  renderBackup(backupBox);
+  renderStatus(statusBox);
+}
+
+// ------------------------------------------------------------------ catalogue language
+// Synced with the new interface (the same two preferences): the viewer's language, chosen from the
+// ones the provider's catalogue is labelled in, and All / <language> first / <language> only for
+// Movies, Series and Search. Rules: lang.js (a copy of the new interface's).
+const langWant = () => { const v = store.prefs.get('catLangCode', 'en'); return /^[a-z]{2,3}$/.test(v) ? v : 'en'; };
+const langPrefs = () => { const n = lang.langName(langWant()); return [['all', 'All languages'], ['first', `${n} first`], ['only', `${n} only`]]; };
+const langPref = () => { const v = store.prefs.get('catLang', 'all'); return ['all', 'first', 'only'].includes(v) ? v : 'all'; };
+function vinfo(it) {
+  const want = langWant();
+  if (!it.vi || it.vi.want !== want) {
+    const f = names.film(it.name);
+    it.vi = { tier: lang.versionTier(it.name, want), want, key: lang.titleKey(f.title, it.year || f.year) };
+  }
+  return it.vi;
+}
+function langItems(list, sort, pref) {
+  if (pref === 'all') return sortedItems(list, sort);
+  const k = `${sort}|${pref}|${langWant()}`;
+  if (!list.sorted[k]) list.sorted[k] = lang.rankByLanguage(lang.applyLangPref(sortedItems(list, sort), pref, vinfo), vinfo);
+  return list.sorted[k];
+}
+
+function renderCatalogueLang(box) {
+  const want = langWant();
+  const sel = selectEl('Your language', [[want, lang.langName(want)]], want, (v) => {
+    store.prefs.set('catLangCode', v);
+    toast(`Saved - Movies, Series and Search can now put ${lang.langName(v)} first`);
+    renderCatalogueLang(box);
+  });
+  const modeSel = selectEl('Movies and series', langPrefs(), langPref(), (v) => { store.prefs.set('catLang', v); toast('Saved'); });
+  const note = h('p', { class: 'muted small', text: 'Loading the languages your provider offers…' });
+  Promise.all(['movies', 'series'].map((k) => catalogue(k).catch(() => null))).then((lists) => {
+    if (!sel.isConnected) return;
+    const have = lang.catalogueLangs(lists.filter(Boolean), 100);
+    if (!have.some(([c]) => c === 'en')) have.push(['en', 0]);
+    if (!have.some(([c]) => c === want)) have.push([want, 0]);
+    const opts = have.map(([c, n]) => [c, `${lang.langName(c)}${n ? ` · ${n.toLocaleString()} titles` : ''}`])
+      .sort((a, b) => (a[0] === 'en' ? -1 : b[0] === 'en' ? 1 : a[1].localeCompare(b[1])));
+    sel.replaceChildren(...opts.map(([v, t]) => h('option', { value: v, text: t })));
+    sel.value = langWant();
+    note.textContent = `Languages your provider’s catalogue is labelled in (${have.length}). `
+      + 'Labels (EN, DE, “dubbed”…) are a good guide, not a guarantee; unlabelled titles always stay.';
+  });
+  const row = (label, control) => h('label', { class: 'pref-row' }, h('span', { class: 'pref-label', text: label }), control);
+  box.replaceChildren(h('h2', { class: 'section-title', text: 'Language' }),
+    row('Your language', sel),
+    row('Movies & series', modeSel),
+    note,
+    h('p', { class: 'muted small', text: '“First” lists titles in your language before the rest; “only” also hides versions dubbed into another language. Shared with all your devices and both interfaces.' }));
+}
+
+// ------------------------------------------------------------------ interface
+// The Pi offers this interface and a newer one; each device chooses (the tv_ui cookie, read by the
+// app when it serves /tv/), the rest get the Pi's default (`iptv ui new|classic`).
+function uiChoice() {
+  const m = document.cookie.match(/(?:^|;\s*)tv_ui=(new|classic)/);
+  return m ? m[1] : '';
+}
+function setUi(v) {
+  const tail = `; Path=/tv/; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+  document.cookie = v ? `tv_ui=${v}; Max-Age=34560000${tail}` : `tv_ui=; Max-Age=0${tail}`;
+  location.reload();
+}
+function renderInterface(box) {
+  const draw = () => {
+    const ui = state.status && state.status.ui;
+    if (!ui || !ui.new) { box.hidden = true; return; }
+    const name = (k) => (k === 'new' ? 'New' : 'Classic');
+    const sel = selectEl('Interface', [['', `Automatic (${name(ui.default)})`], ['new', 'New'], ['classic', 'Classic (this one)']], uiChoice(), setUi);
+    box.replaceChildren(h('h2', { class: 'section-title', text: 'Interface' }),
+      h('label', { class: 'pref-row' }, h('span', { text: 'On this device' }), sel),
+      h('p', { class: 'muted small', text: 'Both interfaces share your favourites, progress and settings. Automatic follows the Pi’s choice.' }));
+    box.hidden = false;
+  };
+  draw();
+  loadStatus().then(draw);
 }
 
 // ------------------------------------------------------------------ subtitles & audio

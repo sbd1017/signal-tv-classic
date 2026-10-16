@@ -149,6 +149,7 @@ h1, h2, h3, p { margin: 0; }
 .pbar.on-poster { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; background: rgba(0, 0, 0, .55); }
 .badge { font-size: 11px; font-weight: 800; letter-spacing: .08em; padding: 3px 7px; border-radius: 5px; }
 .live-badge { background: var(--live); color: #fff; }
+.replay-badge { background: var(--surface-3); color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-2); }   /* a replay on now: never red */
 
 /* ---------------------------------------------------------------- thumbs */
 .thumb { position: relative; display: block; overflow: hidden; background: var(--surface-2); flex: none; }
@@ -527,3 +528,7 @@ h1, h2, h3, p { margin: 0; }
 @keyframes slideup { from { transform: translateY(40px); opacity: 0; } }
 @keyframes toastin { from { opacity: 0; transform: translate(-50%, 8px); } }
 @keyframes osd { 0% { opacity: 0; } 12% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ---------------------------------------------------------------- settings */
+.view-head .settings-link { align-self: center; }
+@media (min-width: 821px) { .view-head .settings-link { display: none; } }   /* the rail has Settings */
