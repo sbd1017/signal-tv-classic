@@ -12,6 +12,16 @@ This is the original, simpler version: one interface, one service, nothing else 
 version, with a redesigned interface, sports crests and more, is
 [Signal TV](https://github.com/sbd1017/signal-tv), and it includes this interface as an option.
 
+<table>
+<tr><td width="50%"><img src="docs/screenshots/live.png" alt="Live TV: player, now and next, channel list"><br><b>Live TV</b>: the player, now and next, and the channel list</td>
+<td width="50%"><img src="docs/screenshots/sports.png" alt="Sports: live and upcoming matches"><br><b>Sports</b>: live and upcoming matches with their broadcasters</td></tr>
+<tr><td><img src="docs/screenshots/movies.png" alt="Movies"><br><b>Movies</b> and series, by category, sort and language</td>
+<td><img src="docs/screenshots/settings.png" alt="Settings"><br><b>Settings</b>: language, subtitles and audio, sync and backup</td></tr>
+</table>
+
+<sub>Shown with a demo provider: made-up channels, and free films (Blender's open movies and public-domain
+classics). Image credits: [docs/screenshots/CREDITS.md](docs/screenshots/CREDITS.md).</sub>
+
 ## What it does
 
 - **Live TV** with categories, favourites, recently played, now and next with progress bars, and a full
