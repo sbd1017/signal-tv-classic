@@ -12,6 +12,18 @@ This is the original, simpler version: one interface, one service, nothing else 
 version, with a redesigned interface, sports crests and more, is
 [Signal TV](https://github.com/sbd1017/signal-tv), and it includes this interface as an option.
 
+## Live demo
+
+**[mubar.uk/signal-classic](https://mubar.uk/signal-classic/)**: open it and use it like your own, no sign-in needed.
+
+- It's connected to a made-up provider: invented channels with a full guide that follows the clock, and
+  free films and series (Blender's open movies and public-domain classics). No real TV channels.
+- The settings for your own provider and login are hidden.
+- It runs on a Raspberry Pi at home, so video is 720p and can be slow to start when a few people are
+  watching.
+- Everyone shares the same demo, and it goes back to the start every night at 04:00 UK time.
+- The newer interface has its own demo at [mubar.uk/signal](https://mubar.uk/signal/).
+
 <table>
 <tr><td width="50%"><img src="docs/screenshots/live.png" alt="Live TV: player, now and next, channel list"><br><b>Live TV</b>: the player, now and next, and the channel list</td>
 <td width="50%"><img src="docs/screenshots/sports.png" alt="Sports: live and upcoming matches"><br><b>Sports</b>: live and upcoming matches with their broadcasters</td></tr>
